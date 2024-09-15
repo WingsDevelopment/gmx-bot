@@ -93,19 +93,44 @@ function positionsChanged(prevPositions, currentPositions) {
 }
 
 async function monitor() {
-  for (const url of MONITOR_URLS) {
-    try {
-      const positionsData = await scrapeTable(url);
+  let browser;
+  try {
+    const positionsData = await scrapeTable(url);
 
-      if (!positionsData || positionsData.length === 0) {
-        console.log(`No positions found for URL: ${url}`);
-        continue;
-      }
+    if (!positionsData || positionsData.length === 0) {
+      console.log(`No positions found for URL: ${url}`);
+      return;
+    }
 
-      const prevPositionsDataForUrl = previousPositionsData[url];
+    const prevPositionsDataForUrl = previousPositionsData[url];
 
-      if (!prevPositionsDataForUrl) {
-        // First time, store the data and send message
+    if (!prevPositionsDataForUrl) {
+      // First time, store the data and send message
+      previousPositionsData[url] = positionsData;
+
+      // Write updated data to file
+      fs.writeFileSync(
+        DATA_FILE,
+        JSON.stringify(previousPositionsData, null, 2)
+      );
+
+      // Format the message
+      let message = `*Positions Data for URL:*\n${url}\n\n`;
+      positionsData.forEach((position, index) => {
+        message += `*Position ${index + 1}:* ${position.token}\n`;
+        message += `- *Collateral:* ${position.collateral}\n`;
+        message += `- *Entry Price:* ${position.entryPrice}\n`;
+        message += `- *Liquidation Price:* ${position.liquidationPrice}\n`;
+        message += "\n";
+      });
+
+      // Send the message via Telegram
+      await sendTelegramMessage(message);
+      console.log(`Positions data sent for URL: ${url}`);
+    } else {
+      // Compare positions
+      if (positionsChanged(prevPositionsDataForUrl, positionsData)) {
+        // Positions have changed, update and send message
         previousPositionsData[url] = positionsData;
 
         // Write updated data to file
@@ -115,7 +140,7 @@ async function monitor() {
         );
 
         // Format the message
-        let message = `*Positions Data for URL:*\n${url}\n\n`;
+        let message = `*Updated Positions Data for URL:*\n${url}\n\n`;
         positionsData.forEach((position, index) => {
           message += `*Position ${index + 1}:* ${position.token}\n`;
           message += `- *Collateral:* ${position.collateral}\n`;
@@ -128,38 +153,27 @@ async function monitor() {
         await sendTelegramMessage(message);
         console.log(`Positions data sent for URL: ${url}`);
       } else {
-        // Compare positions
-        if (positionsChanged(prevPositionsDataForUrl, positionsData)) {
-          // Positions have changed, update and send message
-          previousPositionsData[url] = positionsData;
-
-          // Write updated data to file
-          fs.writeFileSync(
-            DATA_FILE,
-            JSON.stringify(previousPositionsData, null, 2)
-          );
-
-          // Format the message
-          let message = `*Updated Positions Data for URL:*\n${url}\n\n`;
-          positionsData.forEach((position, index) => {
-            message += `*Position ${index + 1}:* ${position.token}\n`;
-            message += `- *Collateral:* ${position.collateral}\n`;
-            message += `- *Entry Price:* ${position.entryPrice}\n`;
-            message += `- *Liquidation Price:* ${position.liquidationPrice}\n`;
-            message += "\n";
-          });
-
-          // Send the message via Telegram
-          await sendTelegramMessage(message);
-          console.log(`Positions data sent for URL: ${url}`);
-        } else {
-          // No significant changes
-          console.log(`No significant changes detected for URL: ${url}`);
-        }
+        // No significant changes
+        console.log(`No significant changes detected for URL: ${url}`);
       }
-    } catch (error) {
-      console.error(`Error processing URL: ${url}\n`, error);
     }
+  } catch (error) {
+    console.error("Error in monitor function:", error);
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
+  }
+}
+
+async function startMonitoring() {
+  while (true) {
+    try {
+      await monitor();
+    } catch (error) {
+      console.error("Error in monitoring loop:", error);
+    }
+    await new Promise((resolve) => setTimeout(resolve, TIME_OUT_MS));
   }
 }
 
@@ -168,6 +182,4 @@ process.on("SIGINT", () => {
   process.exit();
 });
 
-setInterval(monitor, TIME_OUT_MS); // TIME_OUT_MS milliseconds interval
-
-monitor();
+startMonitoring();
