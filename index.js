@@ -79,16 +79,49 @@ async function monitor() {
   for (const url of MONITOR_URLS) {
     try {
       const newScrapedData = await scrapeTable(url, page);
-      // todo remove this hack :)
       if (isFirstRun <= MONITOR_URLS.length) {
         isFirstRun++;
         continue;
       }
 
-      const prevPositionsDataForUrl = previousPositionsData[url];
+      if (!newScrapedData && previousPositionsData[url]) {
+        // Scraping failed but there is previous data, assume positions closed
+        console.log(`Scraping failed or no positions found for URL: ${url}`);
+        delete previousPositionsData[url];
 
-      if (!prevPositionsDataForUrl && newScrapedData) {
+        // Write updated data to file
+        fs.writeFileSync(
+          DATA_FILE,
+          JSON.stringify(previousPositionsData, null, 2)
+        );
+
+        // Send message for all positions closed
+        let message = `*All positions closed for URL:*\n${url}\n\n*Previously held positions:*\n\n`;
+        previousPositionsData[url]?.forEach((position, index) => {
+          message += `*Position ${index + 1}:* ${position.token}\n`;
+          message += `- *Collateral:* ${position.collateral}\n`;
+          message += `- *Entry Price:* ${position.entryPrice}\n`;
+          message += `- *Liquidation Price:* ${position.liquidationPrice}\n`;
+          message += "\n";
+        });
+
+        if (!IS_DEV_ENV) {
+          await sendTelegramMessage(message + "\n\nAll positions closed.");
+        }
+        console.log(`All positions closed for URL: ${url}`);
+        continue;
+      }
+
+      if (!newScrapedData || newScrapedData.length === 0) {
+        console.log(`No new positions found for URL: ${url}`);
+        continue;
+      }
+
+      const prevPositionsDataForUrl = previousPositionsData[url] || [];
+
+      if (prevPositionsDataForUrl.length === 0) {
         // First time, store the data and send message
+        console.log(`First-time positions detected for URL: ${url}`);
         previousPositionsData[url] = newScrapedData;
 
         // Write updated data to file
@@ -115,20 +148,24 @@ async function monitor() {
         continue;
       }
 
-      if (
-        !newScrapedData ||
-        (newScrapedData.length === 0 && prevPositionsDataForUrl)
-      ) {
-        delete previousPositionsData[url];
+      // Compare positions
+      const posChanged = positionsChanged(
+        prevPositionsDataForUrl,
+        newScrapedData
+      );
+      if (posChanged.changed) {
+        // Positions have changed, update and send message
+        previousPositionsData[url] = newScrapedData;
+
         // Write updated data to file
         fs.writeFileSync(
           DATA_FILE,
           JSON.stringify(previousPositionsData, null, 2)
         );
 
-        // Send a message to the user
-        let message = `*All positions closed for URL:*\n${url}\n\n*Previously held positions:*\n\n`;
-        prevPositionsDataForUrl.forEach((position, index) => {
+        // Format the message
+        let message = `*Updated Positions Data for URL:*\n${url}\n\n`;
+        newScrapedData.forEach((position, index) => {
           message += `*Position ${index + 1}:* ${position.token}\n`;
           message += `- *Collateral:* ${position.collateral}\n`;
           message += `- *Entry Price:* ${position.entryPrice}\n`;
@@ -136,47 +173,13 @@ async function monitor() {
           message += "\n";
         });
 
+        // Send the message via Telegram
         if (!IS_DEV_ENV) {
-          await sendTelegramMessage(message + "\n\nAll positions closed.");
+          await sendTelegramMessage(posChanged.message + "\n" + message);
         }
-        console.log(`All positions closed for URL: ${url}`);
-        continue;
-      }
-      if (newScrapedData) {
-        // Compare positions
-        const posChanged = positionsChanged(
-          prevPositionsDataForUrl,
-          newScrapedData
-        );
-        if (posChanged.changed) {
-          // Positions have changed, update and send message
-          previousPositionsData[url] = newScrapedData;
-
-          // Write updated data to file
-          fs.writeFileSync(
-            DATA_FILE,
-            JSON.stringify(previousPositionsData, null, 2)
-          );
-
-          // Format the message
-          let message = `*Updated Positions Data for URL:*\n${url}\n\n`;
-          newScrapedData.forEach((position, index) => {
-            message += `*Position ${index + 1}:* ${position.token}\n`;
-            message += `- *Collateral:* ${position.collateral}\n`;
-            message += `- *Entry Price:* ${position.entryPrice}\n`;
-            message += `- *Liquidation Price:* ${position.liquidationPrice}\n`;
-            message += "\n";
-          });
-
-          // Send the message via Telegram
-          if (!IS_DEV_ENV) {
-            await sendTelegramMessage(posChanged.message + "\n" + message);
-          }
-          console.log(`Positions data sent for URL: ${url}`);
-        } else {
-          // No significant changes
-          console.log(`No significant changes detected for URL: ${url}`);
-        }
+        console.log(`Positions data sent for URL: ${url}`);
+      } else {
+        console.log(`No significant changes detected for URL: ${url}`);
       }
     } catch (error) {
       console.error(`Error processing URL: ${url}\n`, error);
