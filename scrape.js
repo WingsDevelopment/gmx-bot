@@ -1,16 +1,8 @@
 // scrape.js
-const puppeteer = require("puppeteer");
 const { OTHER_TIME_OUTS } = require("./config");
 
-async function scrapeTable(url) {
+async function scrapeTable(url, page) {
   try {
-    const browser = await puppeteer.launch({
-      executablePath: "/usr/bin/chromium-browser",
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"],
-    });
-    const page = await browser.newPage();
-
     // Handle navigation timeout
     await page.setDefaultNavigationTimeout(OTHER_TIME_OUTS);
 
@@ -30,7 +22,6 @@ async function scrapeTable(url) {
 
     if (!tableExists) {
       console.log(`No positions found for URL: ${url}`);
-      await browser.close();
       return [];
     }
 
@@ -66,7 +57,6 @@ async function scrapeTable(url) {
       });
     });
 
-    await browser.close();
     return positionsData;
   } catch (error) {
     console.error(`Error scraping table: ${url}\n`, error);

@@ -1,4 +1,5 @@
 // index.js
+const puppeteer = require("puppeteer");
 const fs = require("fs");
 const path = require("path");
 const scrapeTable = require("./scrape");
@@ -8,6 +9,9 @@ const {
   TIME_OUT_MS,
   MONITOR_URLS,
 } = require("./config");
+
+let browser;
+let page;
 
 const DATA_FILE = path.join(__dirname, "previousPositionsData.json");
 
@@ -31,71 +35,65 @@ if (fs.existsSync(DATA_FILE)) {
 }
 
 function positionsChanged(prevPositions, currentPositions) {
-  const prevPositionsMap = {};
-  prevPositions.forEach((pos) => {
-    prevPositionsMap[pos.token] = pos;
-  });
+  const prevTokens = prevPositions.map((pos) => pos.token);
+  const currentTokens = currentPositions.map((pos) => pos.token);
 
-  const currentPositionsMap = {};
-  currentPositions.forEach((pos) => {
-    currentPositionsMap[pos.token] = pos;
-  });
+  // Create sets of tokens for easier comparison
+  const prevTokenSet = new Set(prevTokens);
+  const currentTokenSet = new Set(currentTokens);
 
-  // Check for added or removed positions
-  const allTokens = new Set([
-    ...Object.keys(prevPositionsMap),
-    ...Object.keys(currentPositionsMap),
-  ]);
+  // Check for added or removed positions by comparing token sets
+  const allTokens = new Set([...prevTokenSet, ...currentTokenSet]);
 
   for (const token of allTokens) {
-    const prevPos = prevPositionsMap[token];
-    const currentPos = currentPositionsMap[token];
+    const inPrev = prevTokenSet.has(token);
+    const inCurrent = currentTokenSet.has(token);
 
-    if (!prevPos) {
+    if (!inPrev && inCurrent) {
       // New position added
       console.log(`New position added: ${token}`);
-      return true;
-    } else if (!currentPos) {
+      return {
+        changed: true,
+        message: `New position added: ${token}`,
+      };
+    } else if (inPrev && !inCurrent) {
       // Position closed
       console.log(`Position closed: ${token}`);
-      return true;
-    } else {
-      // Compare size or other significant fields
-      const prevSizeStr = prevPos.size.replace(/[^0-9.-]+/g, "");
-      const currentSizeStr = currentPos.size.replace(/[^0-9.-]+/g, "");
-
-      const prevSize = parseFloat(prevSizeStr);
-      const currentSize = parseFloat(currentSizeStr);
-
-      if (isNaN(prevSize) || isNaN(currentSize) || prevSize === 0) {
-        // Cannot parse sizes or previous size is zero, consider as changed
-        console.log(`Cannot parse sizes for ${token}`);
-        return true;
-      }
-
-      const sizeChangePercent =
-        (Math.abs(currentSize - prevSize) / prevSize) * 100;
-
-      if (sizeChangePercent >= SIZE_CHANGE_THRESHOLD) {
-        // Size change exceeds threshold
-        console.log(
-          `Position size changed for ${token}: ${prevSize} -> ${currentSize} (${sizeChangePercent.toFixed(
-            2
-          )}%)`
-        );
-        return true;
-      }
+      return {
+        changed: true,
+        message: `Position closed: ${token}`,
+      };
     }
   }
 
-  // No significant changes detected
-  return false;
+  // No changes detected in token set
+  return {
+    changed: false,
+    message: "",
+  };
 }
 
 async function monitor() {
+  try {
+    if (!browser) {
+      // Launch the browser only once when the bot starts
+      browser = await puppeteer.launch({
+        // executablePath: "/usr/bin/chromium-browser",
+        headless: true,
+        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"],
+      });
+      console.log("Browser launched.");
+
+      page = await browser.newPage();
+      console.log("Page created.");
+    }
+  } catch (error) {
+    console.error("Failed to launch browser:", error);
+    return;
+  }
   for (const url of MONITOR_URLS) {
     try {
-      const positionsData = await scrapeTable(url);
+      const positionsData = await scrapeTable(url, page);
 
       if (!positionsData || positionsData.length === 0) {
         console.log(`No positions found for URL: ${url}`);
@@ -129,7 +127,11 @@ async function monitor() {
         console.log(`Positions data sent for URL: ${url}`);
       } else {
         // Compare positions
-        if (positionsChanged(prevPositionsDataForUrl, positionsData)) {
+        const posChanged = positionsChanged(
+          prevPositionsDataForUrl,
+          positionsData
+        );
+        if (posChanged.changed) {
           // Positions have changed, update and send message
           previousPositionsData[url] = positionsData;
 
@@ -150,7 +152,7 @@ async function monitor() {
           });
 
           // Send the message via Telegram
-          await sendTelegramMessage(message);
+          await sendTelegramMessage(message + "\n\n" + posChanged.message);
           console.log(`Positions data sent for URL: ${url}`);
         } else {
           // No significant changes
@@ -163,11 +165,10 @@ async function monitor() {
   }
 }
 
-process.on("SIGINT", () => {
+process.on("SIGINT", async () => {
   console.log("Bot is shutting down...");
+  await browser.close();
   process.exit();
 });
 
 setInterval(monitor, TIME_OUT_MS); // TIME_OUT_MS milliseconds interval
-
-monitor();
