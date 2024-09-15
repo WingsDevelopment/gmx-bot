@@ -4,11 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const scrapeTable = require("./scrape");
 const sendTelegramMessage = require("./notify");
-const {
-  SIZE_CHANGE_THRESHOLD,
-  TIME_OUT_MS,
-  MONITOR_URLS,
-} = require("./config");
+const { TIME_OUT_MS, MONITOR_URLS } = require("./config");
 
 let browser;
 let page;
@@ -78,7 +74,7 @@ async function monitor() {
     if (!browser) {
       // Launch the browser only once when the bot starts
       browser = await puppeteer.launch({
-        // executablePath: "/usr/bin/chromium-browser",
+        executablePath: "/usr/bin/chromium-browser",
         headless: true,
         args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"],
       });
