@@ -3,11 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "postinstall": "node node_modules/puppeteer/install.js --force"
-  },
-  "engines": {
-    "node": "20.x"
+    "start": "node index.js"
   },
   "keywords": [],
   "author": "",
@@ -16,5 +12,8 @@
   "dependencies": {
     "node-telegram-bot-api": "^0.66.0",
     "puppeteer": "23.3.0"
+  },
+  "engines": {
+    "node": "20.x"
   }
 }
