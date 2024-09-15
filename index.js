@@ -1,10 +1,32 @@
 // index.js
+const fs = require("fs");
+const path = require("path");
 const scrapeTable = require("./scrape");
 const sendTelegramMessage = require("./notify");
-const { SIZE_CHANGE_THRESHOLD, TIME_OUT_MS } = require("./config");
-const { MONITOR_URLS } = require("./config");
+const {
+  SIZE_CHANGE_THRESHOLD,
+  TIME_OUT_MS,
+  MONITOR_URLS,
+} = require("./config");
 
-let previousPositionsData = {}; // In-memory store
+const DATA_FILE = path.join(__dirname, "previousPositionsData.json");
+
+// Initialize previousPositionsData from the file
+let previousPositionsData = {};
+
+// Check if the data file exists
+if (fs.existsSync(DATA_FILE)) {
+  try {
+    const rawData = fs.readFileSync(DATA_FILE);
+    previousPositionsData = JSON.parse(rawData);
+    console.log("Loaded previous positions data from file.");
+  } catch (error) {
+    console.error("Error reading previous positions data file:", error);
+    previousPositionsData = {};
+  }
+} else {
+  console.log("No previous positions data file found. Starting fresh.");
+}
 
 function positionsChanged(prevPositions, currentPositions) {
   const prevPositionsMap = {};
@@ -22,6 +44,7 @@ function positionsChanged(prevPositions, currentPositions) {
     ...Object.keys(prevPositionsMap),
     ...Object.keys(currentPositionsMap),
   ]);
+
   for (const token of allTokens) {
     const prevPos = prevPositionsMap[token];
     const currentPos = currentPositionsMap[token];
@@ -52,7 +75,7 @@ function positionsChanged(prevPositions, currentPositions) {
         (Math.abs(currentSize - prevSize) / prevSize) * 100;
 
       if (sizeChangePercent >= SIZE_CHANGE_THRESHOLD) {
-        // Set threshold as 5%
+        // Size change exceeds threshold
         console.log(
           `Position size changed for ${token}: ${prevSize} -> ${currentSize} (${sizeChangePercent.toFixed(
             2
@@ -60,12 +83,10 @@ function positionsChanged(prevPositions, currentPositions) {
         );
         return true;
       }
-
-      // Add more comparisons if needed
     }
   }
 
-  // If no significant changes detected
+  // No significant changes detected
   return false;
 }
 
@@ -79,11 +100,17 @@ async function monitor() {
         continue;
       }
 
-      const prevPositionsData = previousPositionsData[url];
+      const prevPositionsDataForUrl = previousPositionsData[url];
 
-      if (!prevPositionsData) {
+      if (!prevPositionsDataForUrl) {
         // First time, store the data and send message
         previousPositionsData[url] = positionsData;
+
+        // Write updated data to file
+        fs.writeFileSync(
+          DATA_FILE,
+          JSON.stringify(previousPositionsData, null, 2)
+        );
 
         // Format the message
         let message = `*Positions Data for URL:*\n${url}\n\n`;
@@ -100,9 +127,15 @@ async function monitor() {
         console.log(`Positions data sent for URL: ${url}`);
       } else {
         // Compare positions
-        if (positionsChanged(prevPositionsData, positionsData)) {
+        if (positionsChanged(prevPositionsDataForUrl, positionsData)) {
           // Positions have changed, update and send message
           previousPositionsData[url] = positionsData;
+
+          // Write updated data to file
+          fs.writeFileSync(
+            DATA_FILE,
+            JSON.stringify(previousPositionsData, null, 2)
+          );
 
           // Format the message
           let message = `*Updated Positions Data for URL:*\n${url}\n\n`;
@@ -133,6 +166,6 @@ process.on("SIGINT", () => {
   process.exit();
 });
 
-setInterval(monitor, TIME_OUT_MS); // 15000 milliseconds = 15 seconds
+setInterval(monitor, TIME_OUT_MS); // TIME_OUT_MS milliseconds interval
 
 monitor();
