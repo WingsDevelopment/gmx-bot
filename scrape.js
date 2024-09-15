@@ -16,15 +16,6 @@ async function scrapeTable(url, page) {
       timeout: OTHER_TIME_OUTS,
     });
 
-    // Check if the table with positions is available
-    const tableExists =
-      (await page.$('tr[data-qa^="position-item-"]')) !== null;
-
-    if (!tableExists) {
-      console.log(`No positions found for URL: ${url}`);
-      return [];
-    }
-
     // Extract positions data
     const positionsData = await page.evaluate(() => {
       const rows = Array.from(
@@ -59,7 +50,7 @@ async function scrapeTable(url, page) {
 
     return positionsData;
   } catch (error) {
-    console.error(`Error scraping table: ${url}\n`, error);
+    // console.error(`Error scraping table: ${url}\n`, error);
     return null;
   }
 }
