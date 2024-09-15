@@ -9,5 +9,6 @@ module.exports = {
     "https://app.gmx.io/#/accounts/0x5Cf259c7e51C497c6aFD3807266E75140aCa381A?network=arbitrum&v=2",
     "https://app.gmx.io/#/accounts/0x4Cd80aa0CE4881Eb8679EdA1f6fbe3d89AEc0F7F?network=avalanche&v=2",
   ],
-  TIME_OUT_MS: 60000,
+  TIME_OUT_MS: 180000,
+  OTHER_TIME_OUTS: 150000,
 };

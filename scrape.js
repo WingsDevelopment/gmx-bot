@@ -1,22 +1,28 @@
 // scrape.js
 const puppeteer = require("puppeteer");
+const { OTHER_TIME_OUTS } = require("./config");
 
 async function scrapeTable(url) {
   try {
     const browser = await puppeteer.launch({
       executablePath: "/usr/bin/chromium-browser",
-      // headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"],
     });
     const page = await browser.newPage();
 
     // Handle navigation timeout
-    await page.setDefaultNavigationTimeout(60000); // 60 seconds
+    await page.setDefaultNavigationTimeout(OTHER_TIME_OUTS);
 
-    await page.goto(url, { waitUntil: "networkidle2" });
+    await page.goto(url, {
+      waitUntil: "networkidle2",
+      timeout: OTHER_TIME_OUTS,
+    });
 
     // Wait for positions data to load
-    await page.waitForSelector('tr[data-qa^="position-item-"]');
+    await page.waitForSelector('tr[data-qa^="position-item-"]', {
+      timeout: OTHER_TIME_OUTS,
+    });
 
     // Check if the table with positions is available
     const tableExists =
