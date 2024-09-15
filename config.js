@@ -7,6 +7,6 @@ module.exports = {
     "https://app.gmx.io/#/accounts/0xDB611d682cb1ad72fcBACd944a8a6e2606a6d158?network=arbitrum&v=2",
     "https://app.gmx.io/#/accounts/0x686Ed15ce2d95121313E00Cd8777aFc228Ece46f?network=arbitrum&v=2",
     "https://app.gmx.io/#/accounts/0x5Cf259c7e51C497c6aFD3807266E75140aCa381A?network=arbitrum&v=2",
-    // Add more URLs if needed
+    "https://app.gmx.io/#/accounts/0x4Cd80aa0CE4881Eb8679EdA1f6fbe3d89AEc0F7F?network=avalanche&v=2",
   ],
 };
