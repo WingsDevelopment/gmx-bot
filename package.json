@@ -11,6 +11,6 @@
   "description": "",
   "dependencies": {
     "node-telegram-bot-api": "^0.66.0",
-    "puppeteer": "^23.3.0"
+    "puppeteer-core": "23.3.0"
   }
 }
