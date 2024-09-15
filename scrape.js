@@ -18,6 +18,16 @@ async function scrapeTable(url) {
     // Wait for positions data to load
     await page.waitForSelector('tr[data-qa^="position-item-"]');
 
+    // Check if the table with positions is available
+    const tableExists =
+      (await page.$('tr[data-qa^="position-item-"]')) !== null;
+
+    if (!tableExists) {
+      console.log(`No positions found for URL: ${url}`);
+      await browser.close();
+      return [];
+    }
+
     // Extract positions data
     const positionsData = await page.evaluate(() => {
       const rows = Array.from(
