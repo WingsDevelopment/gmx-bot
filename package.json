@@ -3,7 +3,11 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "postinstall": "node node_modules/puppeteer/install.js --force"
+  },
+  "engines": {
+    "node": "20.x"
   },
   "keywords": [],
   "author": "",
