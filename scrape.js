@@ -4,8 +4,8 @@ const puppeteer = require("puppeteer");
 async function scrapeTable(url) {
   try {
     const browser = await puppeteer.launch({
-      // executablePath: "/usr/bin/chromium-browser",
-      headless: true,
+      executablePath: "/usr/bin/chromium-browser",
+      // headless: true,
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
     const page = await browser.newPage();
