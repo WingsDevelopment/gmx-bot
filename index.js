@@ -11,6 +11,8 @@ const {
 
 const DATA_FILE = path.join(__dirname, "previousPositionsData.json");
 
+console.log("Starting the bot...");
+
 // Initialize previousPositionsData from the file
 let previousPositionsData = {};
 
