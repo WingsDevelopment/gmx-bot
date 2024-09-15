@@ -1,7 +1,7 @@
 // index.js
 const scrapeTable = require("./scrape");
 const sendTelegramMessage = require("./notify");
-const { SIZE_CHANGE_THRESHOLD } = require("./config");
+const { SIZE_CHANGE_THRESHOLD, TIME_OUT_MS } = require("./config");
 const { MONITOR_URLS } = require("./config");
 
 let previousPositionsData = {}; // In-memory store
@@ -128,14 +128,11 @@ async function monitor() {
   }
 }
 
-// Handle process exit
 process.on("SIGINT", () => {
   console.log("Bot is shutting down...");
   process.exit();
 });
 
-// Schedule the monitor function to run every 15 seconds
-setInterval(monitor, 15000); // 15000 milliseconds = 15 seconds
+setInterval(monitor, TIME_OUT_MS); // 15000 milliseconds = 15 seconds
 
-// Run the monitor function immediately on startup
 monitor();
