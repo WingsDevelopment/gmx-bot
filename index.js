@@ -153,7 +153,6 @@ async function monitor() {
           await sendTelegramMessage(message);
           console.log(`Positions data sent for URL: ${url}`);
         } else {
-          await sendTelegramMessage("0 changes");
           // No significant changes
           console.log(`No significant changes detected for URL: ${url}`);
         }
