@@ -11,6 +11,12 @@ module.exports = {
     },
     {
       OwnerName: "/",
+      Description: "Eth long, copycat, high win percentage",
+      Url: "https://app.gmx.io/#/accounts/0x5dCD4b840CBC72408316E0a43cBB2a6B5812E929?network=arbitrum&v=2",
+      OurRating: "4/5",
+    },
+    {
+      OwnerName: "/",
       Description: "Very high win%, no loses",
       Url: "https://app.gmx.io/#/accounts/0x5CE6f3798B9ca0797E1027E9b86E7dF0Ba61E593?network=arbitrum&v=2",
       OurRating: "/",
