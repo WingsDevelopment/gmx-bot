@@ -30,8 +30,12 @@ function loadPreviousData() {
 }
 
 function positionsChanged(prevPositions, currentPositions) {
-  const prevEntries = prevPositions.map((pos) => pos.entryPrice);
-  const currentEntries = currentPositions.map((pos) => pos.entryPrice);
+  const prevEntries = prevPositions.map((pos) =>
+    parseFloat(pos.entryPrice.replace(/[$,]/g, "")).toFixed(2)
+  );
+  const currentEntries = currentPositions.map((pos) =>
+    parseFloat(pos.entryPrice.replace(/[$,]/g, "")).toFixed(2)
+  );
 
   const prevEntrySet = new Set(prevEntries);
   const currentEntrySet = new Set(currentEntries);
@@ -43,9 +47,12 @@ function positionsChanged(prevPositions, currentPositions) {
 
     if (!inPrev && inCurrent) {
       // New position added
+
       console.log(`New position added with entryPrice: ${entryPrice}`);
       const newPosition = currentPositions.find(
-        (pos) => pos.entryPrice === entryPrice
+        (pos) =>
+          parseFloat(pos.entryPrice.replace(/[$,]/g, "")).toFixed(2) ===
+          entryPrice
       );
       return {
         changed: true,
@@ -55,7 +62,9 @@ function positionsChanged(prevPositions, currentPositions) {
       // Position closed
       console.log(`Position closed with entryPrice: ${entryPrice}`);
       const closedPosition = prevPositions.find(
-        (pos) => pos.entryPrice === entryPrice
+        (pos) =>
+          parseFloat(pos.entryPrice.replace(/[$,]/g, "")).toFixed(2) ===
+          entryPrice
       );
       return {
         changed: true,
