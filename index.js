@@ -91,13 +91,35 @@ function craftMessageForTelegram({
   return message;
 }
 
+async function retryScrapeTable(url, page, retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const scrapedData = await scrapeTable(url, page);
+      if (scrapedData) {
+        return scrapedData; // If successful, return the scraped data
+      }
+      console.log(`Attempt ${attempt} failed for URL: ${url}, retrying...`);
+    } catch (error) {
+      console.error(
+        `Attempt ${attempt} resulted in an error for URL: ${url}`,
+        error
+      );
+    }
+    if (attempt === retries) {
+      console.error(`All ${retries} attempts failed for URL: ${url}`);
+      return null; // If all attempts fail, return null
+    }
+  }
+  return null;
+}
+
 async function monitor() {
   if (isScraping || initializingBrowser) return;
   isScraping = true;
 
   for (const { Url, Description, OurRating, OwnerName } of MONITOR_URLS) {
     try {
-      const newScrapedData = await scrapeTable(Url, page);
+      const newScrapedData = await retryScrapeTable(Url, page);
       if (isFirstRun <= MONITOR_URLS.length - 1) {
         isFirstRun++;
         console.log({ isFirstRun });
