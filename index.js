@@ -172,6 +172,7 @@ async function monitor() {
           description: Description,
           ourRating: OurRating,
           positionsData: newScrapedData,
+          statusMessage: "First-time positions detected",
         });
 
         if (!IS_DEV_ENV) {
