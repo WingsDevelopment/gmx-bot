@@ -64,7 +64,7 @@ module.exports = {
       OurRating: "/",
     },
   ],
-  TIME_OUT_MS: 2 * 60 * 1000,
+  TIME_OUT_MS: 4 * 60 * 1000,
   OTHER_TIME_OUTS: 30 * 1000,
   // TIME_OUT_MS: 5000,
   // OTHER_TIME_OUTS: 1000,

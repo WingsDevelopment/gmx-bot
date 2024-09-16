@@ -104,6 +104,7 @@ async function monitor() {
       const newScrapedData = await scrapeTable(Url, page);
       if (isFirstRun <= MONITOR_URLS.length) {
         isFirstRun++;
+        console.log({ isFirstRun });
         continue;
       }
 
