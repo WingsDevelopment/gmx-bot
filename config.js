@@ -63,11 +63,17 @@ module.exports = {
       Url: "https://app.gmx.io/#/accounts/0x4Cd80aa0CE4881Eb8679EdA1f6fbe3d89AEc0F7F?network=arbitrum&v=2",
       OurRating: "/",
     },
+    {
+      OwnerName: "Cowboy",
+      Description: "Bot owner",
+      Url: "https://app.gmx.io/#/accounts/0x7b555e1981893F35A10Ef5A7B9688207B805CA33?network=arbitrum&v=2",
+      OurRating: "5/5",
+    },
   ],
   // TIME_OUT_MS: 1 * 60 * 1000,
   // OTHER_TIME_OUTS: 15 * 1000,
   IS_DEV_ENV: false,
-  TIME_OUT_MS: 10000,
+  TIME_OUT_MS: 20000,
   OTHER_TIME_OUTS: 5000,
   // IS_DEV_ENV: true,
 };
