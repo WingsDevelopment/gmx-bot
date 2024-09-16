@@ -1,6 +1,5 @@
-// index.js
 const puppeteer = require("puppeteer");
-const fs = require("fs");
+const fs = require("fs"); // Use async file operations
 const path = require("path");
 const scrapeTable = require("./scrape");
 const sendTelegramMessage = require("./notify");
@@ -11,7 +10,6 @@ let page;
 let isScraping = false;
 let initializingBrowser = false;
 let isFirstRun = 0;
-
 const DATA_FILE = path.join(__dirname, "previousPositionsData.json");
 
 console.log("Starting the bot...");
@@ -19,57 +17,55 @@ console.log("Starting the bot...");
 // Initialize previousPositionsData from the file
 let previousPositionsData = {};
 
-// Check if the data file exists
-if (fs.existsSync(DATA_FILE)) {
+function loadPreviousData() {
   try {
-    const rawData = fs.readFileSync(DATA_FILE);
+    const rawData = fs.readFileSync(DATA_FILE, "utf8");
     previousPositionsData = JSON.parse(rawData);
     console.log("Loaded previous positions data from file.");
   } catch (error) {
-    console.error("Error reading previous positions data file:", error);
-    previousPositionsData = {};
+    console.log(
+      "No previous positions data file found or error reading it. Starting fresh."
+    );
   }
-} else {
-  console.log("No previous positions data file found. Starting fresh.");
 }
 
 function positionsChanged(prevPositions, currentPositions) {
-  const prevTokens = prevPositions.map((pos) => pos.token);
-  const currentTokens = currentPositions.map((pos) => pos.token);
+  const prevEntries = prevPositions.map((pos) => pos.entryPrice);
+  const currentEntries = currentPositions.map((pos) => pos.entryPrice);
 
-  // Create sets of tokens for easier comparison
-  const prevTokenSet = new Set(prevTokens);
-  const currentTokenSet = new Set(currentTokens);
+  const prevEntrySet = new Set(prevEntries);
+  const currentEntrySet = new Set(currentEntries);
+  const allEntries = new Set([...prevEntrySet, ...currentEntrySet]);
 
-  // Check for added or removed positions by comparing token sets
-  const allTokens = new Set([...prevTokenSet, ...currentTokenSet]);
-
-  for (const token of allTokens) {
-    const inPrev = prevTokenSet.has(token);
-    const inCurrent = currentTokenSet.has(token);
+  for (const entryPrice of allEntries) {
+    const inPrev = prevEntrySet.has(entryPrice);
+    const inCurrent = currentEntrySet.has(entryPrice);
 
     if (!inPrev && inCurrent) {
       // New position added
-      console.log(`New position added: ${token}`);
+      console.log(`New position added with entryPrice: ${entryPrice}`);
+      const newPosition = currentPositions.find(
+        (pos) => pos.entryPrice === entryPrice
+      );
       return {
         changed: true,
-        message: `*New position added*: ${token}`,
+        message: `*New position added*: ${newPosition.token} at entry price ${entryPrice}`,
       };
     } else if (inPrev && !inCurrent) {
       // Position closed
-      console.log(`Position closed: ${token}`);
+      console.log(`Position closed with entryPrice: ${entryPrice}`);
+      const closedPosition = prevPositions.find(
+        (pos) => pos.entryPrice === entryPrice
+      );
       return {
         changed: true,
-        message: `*Position closed*: ${token}`,
+        message: `*Position closed*: ${closedPosition.token} at entry price ${entryPrice}`,
       };
     }
   }
 
-  // No changes detected in token set
-  return {
-    changed: false,
-    message: "",
-  };
+  // No changes detected in entry prices
+  return { changed: false, message: "" };
 }
 
 function craftMessageForTelegram({
@@ -102,7 +98,7 @@ async function monitor() {
   for (const { Url, Description, OurRating, OwnerName } of MONITOR_URLS) {
     try {
       const newScrapedData = await scrapeTable(Url, page);
-      if (isFirstRun <= MONITOR_URLS.length) {
+      if (isFirstRun <= MONITOR_URLS.length - 1) {
         isFirstRun++;
         console.log({ isFirstRun });
         continue;
@@ -111,17 +107,9 @@ async function monitor() {
       const prevPositionsDataForUrl = previousPositionsData[Url] || [];
 
       if (!newScrapedData && prevPositionsDataForUrl.length > 0) {
-        // Scraping failed or no positions found, assume all positions closed
         console.log(`Scraping failed or no positions found for URL: ${Url}`);
         delete previousPositionsData[Url];
 
-        // Write updated data to file
-        fs.writeFileSync(
-          DATA_FILE,
-          JSON.stringify(previousPositionsData, null, 2)
-        );
-
-        // Craft message for all positions closed
         const message = craftMessageForTelegram({
           url: Url,
           ownerName: OwnerName,
@@ -144,17 +132,9 @@ async function monitor() {
       }
 
       if (prevPositionsDataForUrl.length === 0) {
-        // First time, store the data and send message
         console.log(`First-time positions detected for URL: ${Url}`);
         previousPositionsData[Url] = newScrapedData;
 
-        // Write updated data to file
-        fs.writeFileSync(
-          DATA_FILE,
-          JSON.stringify(previousPositionsData, null, 2)
-        );
-
-        // Craft message for new positions
         const message = craftMessageForTelegram({
           url: Url,
           ownerName: OwnerName,
@@ -170,22 +150,13 @@ async function monitor() {
         continue;
       }
 
-      // Compare positions
       const posChanged = positionsChanged(
         prevPositionsDataForUrl,
         newScrapedData
       );
       if (posChanged.changed) {
-        // Positions have changed, update and send message
         previousPositionsData[Url] = newScrapedData;
 
-        // Write updated data to file
-        fs.writeFileSync(
-          DATA_FILE,
-          JSON.stringify(previousPositionsData, null, 2)
-        );
-
-        // Craft message for updated positions
         const message = craftMessageForTelegram({
           url: Url,
           ownerName: OwnerName,
@@ -214,7 +185,6 @@ async function initializeBrowser() {
   try {
     if (!browser) {
       initializingBrowser = true;
-      // Launch the browser only once when the bot starts
       browser = await puppeteer.launch({
         executablePath: IS_DEV_ENV ? undefined : "/usr/bin/chromium-browser",
         headless: true,
@@ -227,17 +197,43 @@ async function initializeBrowser() {
     }
   } catch (error) {
     console.error("Failed to launch browser:", error);
-    return;
   } finally {
     initializingBrowser = false;
   }
 }
 
-process.on("SIGINT", async () => {
-  console.log("Bot is shutting down...");
-  await browser.close();
-  process.exit();
-});
+function writeDataToFile() {
+  console.log({ previousPositionsData });
+  try {
+    fs.writeFileSync(
+      DATA_FILE,
+      JSON.stringify(previousPositionsData, null, 2),
+      "utf8"
+    );
+    console.log("Data successfully written to file.");
+  } catch (error) {
+    console.error("Error writing data to file:", error);
+  }
+}
 
-setInterval(monitor, TIME_OUT_MS); // TIME_OUT_MS milliseconds interval
-initializeBrowser();
+process.on("SIGINT", onExit);
+
+function onExit() {
+  console.log("Bot is shutting down...");
+  writeDataToFile();
+  browser.close().then(() => {
+    console.log("Browser closed.");
+    console.log({ browser });
+  });
+
+  process.exit();
+}
+
+async function init() {
+  loadPreviousData();
+  await initializeBrowser();
+  await monitor();
+  setInterval(monitor, TIME_OUT_MS); // TIME_OUT_MS milliseconds interval
+}
+
+init();
