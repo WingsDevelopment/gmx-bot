@@ -72,22 +72,47 @@ function positionsChanged(prevPositions, currentPositions) {
   };
 }
 
+function craftMessageForTelegram({
+  url,
+  ownerName,
+  description,
+  ourRating,
+  positionsData = [],
+  statusMessage = "",
+}) {
+  let message = `*Owner*: ${ownerName}\n*Description*: ${description}\n*Our Rating*: ${ourRating}\n\n`;
+  message += statusMessage ? `*Status*: ${statusMessage}\n\n` : "";
+  message += `*Positions Data for URL:*\n${url}\n\n`;
+
+  positionsData.forEach((position, index) => {
+    message += `*Position ${index + 1}:* ${position.token}\n`;
+    message += `- *Collateral:* ${position.collateral}\n`;
+    message += `- *Entry Price:* ${position.entryPrice}\n`;
+    message += `- *Liquidation Price:* ${position.liquidationPrice}\n`;
+    message += "\n";
+  });
+
+  return message;
+}
+
 async function monitor() {
   if (isScraping || initializingBrowser) return;
   isScraping = true;
 
-  for (const url of MONITOR_URLS) {
+  for (const { Url, Description, OurRating, OwnerName } of MONITOR_URLS) {
     try {
-      const newScrapedData = await scrapeTable(url, page);
+      const newScrapedData = await scrapeTable(Url, page);
       if (isFirstRun <= MONITOR_URLS.length) {
         isFirstRun++;
         continue;
       }
 
-      if (!newScrapedData && previousPositionsData[url]) {
-        // Scraping failed but there is previous data, assume positions closed
-        console.log(`Scraping failed or no positions found for URL: ${url}`);
-        delete previousPositionsData[url];
+      const prevPositionsDataForUrl = previousPositionsData[Url] || [];
+
+      if (!newScrapedData && prevPositionsDataForUrl.length > 0) {
+        // Scraping failed or no positions found, assume all positions closed
+        console.log(`Scraping failed or no positions found for URL: ${Url}`);
+        delete previousPositionsData[Url];
 
         // Write updated data to file
         fs.writeFileSync(
@@ -95,34 +120,32 @@ async function monitor() {
           JSON.stringify(previousPositionsData, null, 2)
         );
 
-        // Send message for all positions closed
-        let message = `*All positions closed for URL:*\n${url}\n\n*Previously held positions:*\n\n`;
-        previousPositionsData[url]?.forEach((position, index) => {
-          message += `*Position ${index + 1}:* ${position.token}\n`;
-          message += `- *Collateral:* ${position.collateral}\n`;
-          message += `- *Entry Price:* ${position.entryPrice}\n`;
-          message += `- *Liquidation Price:* ${position.liquidationPrice}\n`;
-          message += "\n";
+        // Craft message for all positions closed
+        const message = craftMessageForTelegram({
+          url: Url,
+          ownerName: OwnerName,
+          description: Description,
+          ourRating: OurRating,
+          positionsData: prevPositionsDataForUrl,
+          statusMessage: "All positions closed",
         });
 
         if (!IS_DEV_ENV) {
-          await sendTelegramMessage(message + "\n\nAll positions closed.");
+          await sendTelegramMessage(message);
         }
-        console.log(`All positions closed for URL: ${url}`);
+        console.log(`All positions closed for URL: ${Url}`);
         continue;
       }
 
       if (!newScrapedData || newScrapedData.length === 0) {
-        console.log(`No new positions found for URL: ${url}`);
+        console.log(`No new positions found for URL: ${Url}`);
         continue;
       }
 
-      const prevPositionsDataForUrl = previousPositionsData[url] || [];
-
       if (prevPositionsDataForUrl.length === 0) {
         // First time, store the data and send message
-        console.log(`First-time positions detected for URL: ${url}`);
-        previousPositionsData[url] = newScrapedData;
+        console.log(`First-time positions detected for URL: ${Url}`);
+        previousPositionsData[Url] = newScrapedData;
 
         // Write updated data to file
         fs.writeFileSync(
@@ -130,21 +153,19 @@ async function monitor() {
           JSON.stringify(previousPositionsData, null, 2)
         );
 
-        // Format the message
-        let message = `*Positions Data for URL:*\n${url}\n\n`;
-        newScrapedData.forEach((position, index) => {
-          message += `*Position ${index + 1}:* ${position.token}\n`;
-          message += `- *Collateral:* ${position.collateral}\n`;
-          message += `- *Entry Price:* ${position.entryPrice}\n`;
-          message += `- *Liquidation Price:* ${position.liquidationPrice}\n`;
-          message += "\n";
+        // Craft message for new positions
+        const message = craftMessageForTelegram({
+          url: Url,
+          ownerName: OwnerName,
+          description: Description,
+          ourRating: OurRating,
+          positionsData: newScrapedData,
         });
 
-        // Send the message via Telegram
         if (!IS_DEV_ENV) {
           await sendTelegramMessage(message);
         }
-        console.log(`Positions data sent for URL: ${url}`);
+        console.log(`Positions data sent for URL: ${Url}`);
         continue;
       }
 
@@ -155,7 +176,7 @@ async function monitor() {
       );
       if (posChanged.changed) {
         // Positions have changed, update and send message
-        previousPositionsData[url] = newScrapedData;
+        previousPositionsData[Url] = newScrapedData;
 
         // Write updated data to file
         fs.writeFileSync(
@@ -163,26 +184,25 @@ async function monitor() {
           JSON.stringify(previousPositionsData, null, 2)
         );
 
-        // Format the message
-        let message = `*Updated Positions Data for URL:*\n${url}\n\n`;
-        newScrapedData.forEach((position, index) => {
-          message += `*Position ${index + 1}:* ${position.token}\n`;
-          message += `- *Collateral:* ${position.collateral}\n`;
-          message += `- *Entry Price:* ${position.entryPrice}\n`;
-          message += `- *Liquidation Price:* ${position.liquidationPrice}\n`;
-          message += "\n";
+        // Craft message for updated positions
+        const message = craftMessageForTelegram({
+          url: Url,
+          ownerName: OwnerName,
+          description: Description,
+          ourRating: OurRating,
+          positionsData: newScrapedData,
+          statusMessage: posChanged.message,
         });
 
-        // Send the message via Telegram
         if (!IS_DEV_ENV) {
-          await sendTelegramMessage(posChanged.message + "\n" + message);
+          await sendTelegramMessage(message);
         }
-        console.log(`Positions data sent for URL: ${url}`);
+        console.log(`Positions data sent for URL: ${Url}`);
       } else {
-        console.log(`No significant changes detected for URL: ${url}`);
+        console.log(`No significant changes detected for URL: ${Url}`);
       }
     } catch (error) {
-      console.error(`Error processing URL: ${url}\n`, error);
+      console.error(`Error processing URL: ${Url}\n`, error);
     }
   }
 
