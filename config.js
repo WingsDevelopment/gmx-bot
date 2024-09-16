@@ -3,12 +3,12 @@ module.exports = {
   TELEGRAM_CHAT_IDS: ["6416507389", "6233329129"],
   SIZE_CHANGE_THRESHOLD: 5,
   MONITOR_URLS: [
-    // {
-    //   OwnerName: "/",
-    //   Description: "Top 1 Avalanche account (seems experienced)",
-    //   Url: "https://app.gmx.io/#/accounts/0x4Cd80aa0CE4881Eb8679EdA1f6fbe3d89AEc0F7F?network=avalanche&v=2",
-    //   OurRating: "/",
-    // },
+    {
+      OwnerName: "/",
+      Description: "Top 1 Avalanche account (seems experienced)",
+      Url: "https://app.gmx.io/#/accounts/0x4Cd80aa0CE4881Eb8679EdA1f6fbe3d89AEc0F7F?network=avalanche&v=2",
+      OurRating: "/",
+    },
     // {
     //   OwnerName: "/",
     //   Description: "Top 2 Avalanche account",
