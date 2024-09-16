@@ -210,7 +210,25 @@ async function initializeBrowser() {
       browser = await puppeteer.launch({
         executablePath: IS_DEV_ENV ? undefined : "/usr/bin/chromium-browser",
         headless: true,
-        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"],
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-gpu",
+          "--disable-dev-shm-usage",
+          "--disable-extensions",
+          "--disable-accelerated-2d-canvas",
+          "--no-zygote",
+          "--single-process",
+          "--disable-background-networking",
+          "--disable-background-timer-throttling",
+          "--disable-backgrounding-occluded-windows",
+          "--disable-breakpad",
+          "--disable-component-extensions-with-background-pages",
+          "--disable-features=TranslateUI",
+          "--disable-ipc-flooding-protection",
+          "--disable-renderer-backgrounding",
+          "--force-color-profile=srgb",
+        ],
       });
       console.log("Browser launched.");
 
@@ -255,7 +273,15 @@ async function init() {
   loadPreviousData();
   await initializeBrowser();
   await monitor();
-  setInterval(monitor, TIME_OUT_MS); // TIME_OUT_MS milliseconds interval
+
+  function startMonitorLoop() {
+    setTimeout(async () => {
+      await monitor();
+      startMonitorLoop();
+    }, TIME_OUT_MS);
+  }
+
+  startMonitorLoop();
 }
 
 init();
