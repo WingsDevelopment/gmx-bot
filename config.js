@@ -40,10 +40,10 @@ module.exports = {
       OurRating: "5/5",
     },
   ],
-  TIME_OUT_MS: 5 * 60 * 1000,
+  CRONE_SCHEDULE: "*/5 * * * *",
   OTHER_TIME_OUTS: 15 * 1000,
   IS_DEV_ENV: false,
-  // TIME_OUT_MS: 10000,
+  // CRONE_SCHEDULE: "*/1 * * * *",
   // OTHER_TIME_OUTS: 5000,
   // IS_DEV_ENV: true,
 };

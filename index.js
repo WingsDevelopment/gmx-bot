@@ -1,7 +1,8 @@
 const puppeteer = require("puppeteer");
 const scrapeTable = require("./scrape");
 const sendTelegramMessage = require("./notify");
-const { TIME_OUT_MS, MONITOR_URLS, IS_DEV_ENV } = require("./config");
+const cron = require("node-cron");
+const { CRONE_SCHEDULE, MONITOR_URLS, IS_DEV_ENV } = require("./config");
 
 let browser;
 let page;
@@ -295,14 +296,18 @@ async function init() {
   await initializeBrowser();
   await monitor();
 
-  function startMonitorLoop() {
-    setTimeout(async () => {
-      await monitor();
-      startMonitorLoop();
-    }, TIME_OUT_MS);
-  }
+  cron.schedule(CRONE_SCHEDULE, async () => {
+    console.log("Scheduled monitor run...");
+    await monitor();
+  });
+  // function startMonitorLoop() {
+  //   setTimeout(async () => {
+  //     await monitor();
+  //     startMonitorLoop();
+  //   }, TIME_OUT_MS);
+  // }
 
-  startMonitorLoop();
+  // startMonitorLoop();
 }
 
 // Start the bot
