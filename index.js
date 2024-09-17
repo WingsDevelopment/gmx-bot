@@ -4,8 +4,6 @@ const sendTelegramMessage = require("./notify");
 const cron = require("node-cron");
 const { CRONE_SCHEDULE, MONITOR_URLS, IS_DEV_ENV } = require("./config");
 
-let browser;
-let page;
 let isScraping = false;
 let initializingBrowser = false;
 let isFirstRun = 0; // Changed to boolean for clarity
@@ -128,7 +126,7 @@ async function retryScrapeTable(url, page, retries = 3) {
 /**
  * Monitors the specified URLs for changes in positions data.
  */
-async function monitor() {
+async function monitor(_browser, page) {
   if (isScraping || initializingBrowser) return;
   isScraping = true;
 
@@ -225,6 +223,8 @@ async function monitor() {
  * Initializes the Puppeteer browser and page.
  */
 async function initializeBrowser() {
+  let browser;
+  let page;
   const args = [
     "--no-sandbox",
     "--disable-setuid-sandbox",
@@ -279,6 +279,11 @@ async function initializeBrowser() {
   } finally {
     initializingBrowser = false;
   }
+
+  return {
+    browser,
+    page,
+  };
 }
 
 /**
@@ -287,21 +292,7 @@ async function initializeBrowser() {
 function onExit() {
   console.log("Bot is shutting down...");
   // No need to write data to file since we're keeping state in memory
-
-  if (browser) {
-    browser
-      .close()
-      .then(() => {
-        console.log("Browser closed.");
-        process.exit();
-      })
-      .catch((error) => {
-        console.error("Error closing browser:", error);
-        process.exit(1);
-      });
-  } else {
-    process.exit();
-  }
+  process.exit();
 }
 
 // Listen for termination signals
@@ -312,21 +303,13 @@ process.on("SIGTERM", onExit);
  * Initializes and starts the monitoring process.
  */
 async function init() {
-  await initializeBrowser();
-  await monitor();
-
   cron.schedule(CRONE_SCHEDULE, async () => {
     console.log("Scheduled monitor run...");
-    await monitor();
+    const { browser, page } = await initializeBrowser();
+    await monitor(browser, page);
+    await page.close();
+    await browser.close();
   });
-  // function startMonitorLoop() {
-  //   setTimeout(async () => {
-  //     await monitor();
-  //     startMonitorLoop();
-  //   }, TIME_OUT_MS);
-  // }
-
-  // startMonitorLoop();
 }
 
 // Start the bot
