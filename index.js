@@ -218,7 +218,7 @@ async function initializeBrowser() {
     if (!browser) {
       initializingBrowser = true;
       browser = await puppeteer.launch({
-        executablePath: IS_DEV_ENV ? undefined : "/usr/bin/chromium-browser",
+        // executablePath: IS_DEV_ENV ? undefined : "/usr/bin/chromium-browser",
         headless: true,
         args: [
           "--no-sandbox",
