@@ -252,10 +252,23 @@ async function initializeBrowser() {
         headless: true,
         args,
       });
-      console.log("Browser launched.");
 
       page = await browser.newPage();
-      console.log("Page created.");
+
+      await page.setDefaultNavigationTimeout(OTHER_TIME_OUTS);
+
+      await page.setRequestInterception(true);
+
+      page.on("request", (request) => {
+        const resourceType = request.resourceType();
+
+        // Simple hook to remove any images or fonts
+        if (resourceType === "image" || resourceType === "font") {
+          request.abort();
+        } else {
+          request.continue();
+        }
+      });
     }
   } catch (error) {
     try {
@@ -266,10 +279,21 @@ async function initializeBrowser() {
           headless: true,
           args,
         });
-        console.log("Browser launched.");
-
         page = await browser.newPage();
-        console.log("Page created.");
+        await page.setDefaultNavigationTimeout(OTHER_TIME_OUTS);
+
+        await page.setRequestInterception(true);
+
+        page.on("request", (request) => {
+          const resourceType = request.resourceType();
+
+          // Simple hook to remove any images or fonts
+          if (resourceType === "image" || resourceType === "font") {
+            request.abort();
+          } else {
+            request.continue();
+          }
+        });
       }
     } catch (error) {
       console.error("Failed to launch browser:", error);
@@ -279,6 +303,8 @@ async function initializeBrowser() {
   } finally {
     initializingBrowser = false;
   }
+
+  console.log("Browser launched.");
 
   return {
     browser,
@@ -302,7 +328,7 @@ process.on("SIGTERM", onExit);
 /**
  * Initializes and starts the monitoring process.
  */
-async function init() {
+function init() {
   cron.schedule(CRONE_SCHEDULE, async () => {
     console.log("Scheduled monitor run...");
     const { browser, page } = await initializeBrowser();
@@ -313,7 +339,10 @@ async function init() {
     if (global.gc) {
       global.gc();
       console.log("Garbage collector invoked.");
-      console.log("Current previousPositionsData:", previousPositionsData);
+      console.log(
+        "Current previousPositionsData:",
+        previousPositionsData?.test
+      );
     } else {
       console.warn(
         "Garbage collector is not exposed. Start Node.js with --expose-gc."

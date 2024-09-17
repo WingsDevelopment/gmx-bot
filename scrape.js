@@ -3,20 +3,6 @@ const { OTHER_TIME_OUTS } = require("./config");
 
 async function scrapeTable(url, page) {
   try {
-    // Handle navigation timeout
-    await page.setDefaultNavigationTimeout(OTHER_TIME_OUTS);
-
-    page.on("request", (request) => {
-      const resourceType = request.resourceType();
-
-      // Simple hook to remove any images or fonts
-      if (resourceType === "image" || resourceType === "font") {
-        request.abort();
-      } else {
-        request.continue();
-      }
-    });
-
     await page.goto(url, {
       waitUntil: "networkidle2",
       timeout: OTHER_TIME_OUTS,
@@ -28,7 +14,7 @@ async function scrapeTable(url, page) {
     });
 
     // Extract positions data
-    const positionsData = await page.evaluate(() => {
+    return await page.evaluate(() => {
       const rows = Array.from(
         document.querySelectorAll('tr[data-qa^="position-item-"]')
       );
@@ -58,8 +44,6 @@ async function scrapeTable(url, page) {
         return position;
       });
     });
-
-    return positionsData;
   } catch (error) {
     // console.error(`Error scraping table: ${url}\n`, error);
     return null;
