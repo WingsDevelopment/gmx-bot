@@ -1,6 +1,4 @@
 const puppeteer = require("puppeteer");
-const fs = require("fs"); // Use async file operations
-const path = require("path");
 const scrapeTable = require("./scrape");
 const sendTelegramMessage = require("./notify");
 const { TIME_OUT_MS, MONITOR_URLS, IS_DEV_ENV } = require("./config");
@@ -9,26 +7,19 @@ let browser;
 let page;
 let isScraping = false;
 let initializingBrowser = false;
-let isFirstRun = 0;
-const DATA_FILE = path.join(__dirname, "previousPositionsData.json");
+let isFirstRun = 0; // Changed to boolean for clarity
 
 console.log("Starting the bot...");
 
-// Initialize previousPositionsData from the file
+// Initialize previousPositionsData in memory
 let previousPositionsData = {};
 
-function loadPreviousData() {
-  try {
-    const rawData = fs.readFileSync(DATA_FILE, "utf8");
-    previousPositionsData = JSON.parse(rawData);
-    console.log("Loaded previous positions data from file.");
-  } catch (error) {
-    console.log(
-      "No previous positions data file found or error reading it. Starting fresh."
-    );
-  }
-}
-
+/**
+ * Determines if there are changes between previous and current positions.
+ * @param {Array} prevPositions - The previous positions data.
+ * @param {Array} currentPositions - The current scraped positions data.
+ * @returns {Object} - An object indicating if there's a change and the corresponding message.
+ */
 function positionsChanged(prevPositions, currentPositions) {
   const prevEntries = prevPositions.map((pos) =>
     parseFloat(pos.entryPrice.replace(/[$,]/g, "")).toFixed(2)
@@ -47,7 +38,6 @@ function positionsChanged(prevPositions, currentPositions) {
 
     if (!inPrev && inCurrent) {
       // New position added
-
       console.log(`New position added with entryPrice: ${entryPrice}`);
       const newPosition = currentPositions.find(
         (pos) =>
@@ -77,6 +67,11 @@ function positionsChanged(prevPositions, currentPositions) {
   return { changed: false, message: "" };
 }
 
+/**
+ * Crafts a message for Telegram based on the provided data.
+ * @param {Object} params - The parameters for crafting the message.
+ * @returns {string} - The formatted Telegram message.
+ */
 function craftMessageForTelegram({
   url,
   ownerName,
@@ -100,6 +95,13 @@ function craftMessageForTelegram({
   return message;
 }
 
+/**
+ * Retries scraping the table data with specified attempts.
+ * @param {string} url - The URL to scrape.
+ * @param {Object} page - The Puppeteer page instance.
+ * @param {number} retries - Number of retry attempts.
+ * @returns {Array|null} - The scraped data or null if all attempts fail.
+ */
 async function retryScrapeTable(url, page, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -122,6 +124,9 @@ async function retryScrapeTable(url, page, retries = 3) {
   return null;
 }
 
+/**
+ * Monitors the specified URLs for changes in positions data.
+ */
 async function monitor() {
   if (isScraping || initializingBrowser) return;
   isScraping = true;
@@ -129,9 +134,11 @@ async function monitor() {
   for (const { Url, Description, OurRating, OwnerName } of MONITOR_URLS) {
     try {
       const newScrapedData = await retryScrapeTable(Url, page);
+
       if (isFirstRun <= MONITOR_URLS.length - 1) {
+        previousPositionsData[Url] = newScrapedData || [];
+        console.log(`First run: Initialized positions for URL: ${Url}`);
         isFirstRun++;
-        console.log({ isFirstRun });
         continue;
       }
 
@@ -213,12 +220,14 @@ async function monitor() {
   isScraping = false;
 }
 
+/**
+ * Initializes the Puppeteer browser and page.
+ */
 async function initializeBrowser() {
   try {
     if (!browser) {
       initializingBrowser = true;
       browser = await puppeteer.launch({
-        // executablePath: IS_DEV_ENV ? undefined : "/usr/bin/chromium-browser",
         headless: true,
         args: [
           "--no-sandbox",
@@ -252,35 +261,37 @@ async function initializeBrowser() {
   }
 }
 
-function writeDataToFile() {
-  console.log({ previousPositionsData });
-  try {
-    fs.writeFileSync(
-      DATA_FILE,
-      JSON.stringify(previousPositionsData, null, 2),
-      "utf8"
-    );
-    console.log("Data successfully written to file.");
-  } catch (error) {
-    console.error("Error writing data to file:", error);
+/**
+ * Handles graceful shutdown of the bot.
+ */
+function onExit() {
+  console.log("Bot is shutting down...");
+  // No need to write data to file since we're keeping state in memory
+
+  if (browser) {
+    browser
+      .close()
+      .then(() => {
+        console.log("Browser closed.");
+        process.exit();
+      })
+      .catch((error) => {
+        console.error("Error closing browser:", error);
+        process.exit(1);
+      });
+  } else {
+    process.exit();
   }
 }
 
+// Listen for termination signals
 process.on("SIGINT", onExit);
+process.on("SIGTERM", onExit);
 
-function onExit() {
-  console.log("Bot is shutting down...");
-  writeDataToFile();
-  browser.close().then(() => {
-    console.log("Browser closed.");
-    console.log({ browser });
-  });
-
-  process.exit();
-}
-
+/**
+ * Initializes and starts the monitoring process.
+ */
 async function init() {
-  loadPreviousData();
   await initializeBrowser();
   await monitor();
 
@@ -294,4 +305,5 @@ async function init() {
   startMonitorLoop();
 }
 
+// Start the bot
 init();
