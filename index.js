@@ -1,149 +1,94 @@
-const puppeteer = require("puppeteer");
-const scrapeTable = require("./scrape");
-const sendTelegramMessage = require("./notify");
+// index.js
+const { spawn } = require("child_process");
+const path = require("path");
 const cron = require("node-cron");
-const { CRONE_SCHEDULE, MONITOR_URLS, IS_DEV_ENV } = require("./config");
+const positionsChanged = require("./positionsChanged");
+const craftMessageForTelegram = require("./craftMessageForTelegram");
+const sendTelegramMessage = require("./notify");
+const {
+  CRONE_SCHEDULE,
+  MONITOR_URLS,
+  IS_DEV_ENV,
+  OTHER_TIME_OUTS,
+} = require("./config");
 
 let isScraping = false;
-let initializingBrowser = false;
-let isFirstRun = 0; // Changed to boolean for clarity
-
-console.log("Starting the bot...");
 
 // Initialize previousPositionsData in memory
 let previousPositionsData = {};
 
 /**
- * Determines if there are changes between previous and current positions.
- * @param {Array} prevPositions - The previous positions data.
- * @param {Array} currentPositions - The current scraped positions data.
- * @returns {Object} - An object indicating if there's a change and the corresponding message.
- */
-function positionsChanged(prevPositions, currentPositions) {
-  const prevEntries = prevPositions.map((pos) =>
-    parseFloat(pos.entryPrice.replace(/[$,]/g, "")).toFixed(2)
-  );
-  const currentEntries = currentPositions.map((pos) =>
-    parseFloat(pos.entryPrice.replace(/[$,]/g, "")).toFixed(2)
-  );
-
-  const prevEntrySet = new Set(prevEntries);
-  const currentEntrySet = new Set(currentEntries);
-  const allEntries = new Set([...prevEntrySet, ...currentEntrySet]);
-
-  for (const entryPrice of allEntries) {
-    const inPrev = prevEntrySet.has(entryPrice);
-    const inCurrent = currentEntrySet.has(entryPrice);
-
-    if (!inPrev && inCurrent) {
-      // New position added
-      console.log(`New position added with entryPrice: ${entryPrice}`);
-      const newPosition = currentPositions.find(
-        (pos) =>
-          parseFloat(pos.entryPrice.replace(/[$,]/g, "")).toFixed(2) ===
-          entryPrice
-      );
-      return {
-        changed: true,
-        message: `*New position added*: ${newPosition.token} at entry price ${entryPrice}`,
-      };
-    } else if (inPrev && !inCurrent) {
-      // Position closed
-      console.log(`Position closed with entryPrice: ${entryPrice}`);
-      const closedPosition = prevPositions.find(
-        (pos) =>
-          parseFloat(pos.entryPrice.replace(/[$,]/g, "")).toFixed(2) ===
-          entryPrice
-      );
-      return {
-        changed: true,
-        message: `*Position closed*: ${closedPosition.token} at entry price ${entryPrice}`,
-      };
-    }
-  }
-
-  // No changes detected in entry prices
-  return { changed: false, message: "" };
-}
-
-/**
- * Crafts a message for Telegram based on the provided data.
- * @param {Object} params - The parameters for crafting the message.
- * @returns {string} - The formatted Telegram message.
- */
-function craftMessageForTelegram({
-  url,
-  ownerName,
-  description,
-  ourRating,
-  positionsData = [],
-  statusMessage = "",
-}) {
-  let message = `*Owner*: ${ownerName}\n*Description*: ${description}\n*Our Rating*: ${ourRating}\n\n`;
-  message += statusMessage ? `*Status*: ${statusMessage}\n\n` : "";
-  message += `*Positions Data for URL:*\n${url}\n\n`;
-
-  positionsData.forEach((position, index) => {
-    message += `*Position ${index + 1}:* ${position.token}\n`;
-    message += `- *Collateral:* ${position.collateral}\n`;
-    message += `- *Entry Price:* ${position.entryPrice}\n`;
-    message += `- *Liquidation Price:* ${position.liquidationPrice}\n`;
-    message += "\n";
-  });
-
-  return message;
-}
-
-/**
- * Retries scraping the table data with specified attempts.
- * @param {string} url - The URL to scrape.
- * @param {Object} page - The Puppeteer page instance.
- * @param {number} retries - Number of retry attempts.
- * @returns {Array|null} - The scraped data or null if all attempts fail.
- */
-async function retryScrapeTable(url, page, retries = 3) {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const scrapedData = await scrapeTable(url, page);
-      if (scrapedData) {
-        return scrapedData; // If successful, return the scraped data
-      }
-      console.log(`Attempt ${attempt} failed for URL: ${url}, retrying...`);
-    } catch (error) {
-      console.error(
-        `Attempt ${attempt} resulted in an error for URL: ${url}`,
-        error
-      );
-    }
-    if (attempt === retries) {
-      console.error(`All ${retries} attempts failed for URL: ${url}`);
-      return null; // If all attempts fail, return null
-    }
-  }
-  return null;
-}
-
-/**
  * Monitors the specified URLs for changes in positions data.
  */
-async function monitor(_browser, page) {
-  if (isScraping || initializingBrowser) return;
+async function monitor() {
+  if (isScraping) {
+    console.log("Previous scraping still in progress. Skipping this run.");
+    return;
+  }
   isScraping = true;
 
   for (const { Url, Description, OurRating, OwnerName } of MONITOR_URLS) {
     try {
-      const newScrapedData = await retryScrapeTable(Url, page);
+      // Prepare input data for the worker
+      const inputData = {
+        url: Url,
+        selectorToGet: 'tr[data-qa^="position-item-"]', // Adjust selector as needed
+        timeout: OTHER_TIME_OUTS || 30000, // Use configured timeout or default
+      };
 
-      if (isFirstRun <= MONITOR_URLS.length - 1) {
-        previousPositionsData[Url] = newScrapedData || [];
-        console.log(`First run: Initialized positions for URL: ${Url}`);
-        isFirstRun++;
+      // Convert input data to base64
+      const jsonData = JSON.stringify(inputData);
+      const b64Data = Buffer.from(jsonData).toString("base64");
+
+      // Spawn the Puppeteer worker
+      const worker = spawn(
+        "node",
+        [path.resolve(__dirname, "puWorker.js"), `--input-data${b64Data}`],
+        { shell: false }
+      );
+
+      let stdoutData = "";
+      let stderrData = "";
+
+      // Collect data from STDOUT
+      worker.stdout.on("data", (data) => {
+        stdoutData += data.toString();
+      });
+
+      // Collect data from STDERR
+      worker.stderr.on("data", (data) => {
+        stderrData += data.toString();
+      });
+
+      // Handle worker exit
+      const exitCode = await new Promise((resolve) => {
+        worker.on("close", resolve);
+      });
+
+      if (exitCode !== 0) {
+        // Handle errors reported by the worker
+        let errorOutput;
+        try {
+          errorOutput = JSON.parse(stderrData);
+        } catch (parseError) {
+          errorOutput = { error: "Unknown error" };
+        }
+        console.error(`Error processing URL: ${Url}\n`, errorOutput.error);
         continue;
       }
 
-      const prevPositionsDataForUrl = previousPositionsData[Url] || [];
+      // Parse the output data
+      let output;
+      try {
+        output = JSON.parse(stdoutData);
+      } catch (parseError) {
+        console.error(`Failed to parse output for URL: ${Url}\n`, parseError);
+        continue;
+      }
 
-      if (!newScrapedData && prevPositionsDataForUrl.length > 0) {
+      const newScrapedData = output.extractedData;
+
+      if (!newScrapedData) {
         console.log(`Scraping failed or no positions found for URL: ${Url}`);
         delete previousPositionsData[Url];
 
@@ -152,7 +97,7 @@ async function monitor(_browser, page) {
           ownerName: OwnerName,
           description: Description,
           ourRating: OurRating,
-          positionsData: prevPositionsDataForUrl,
+          positionsData: previousPositionsData[Url] || [],
           statusMessage: "All positions closed",
         });
 
@@ -163,31 +108,16 @@ async function monitor(_browser, page) {
         continue;
       }
 
-      if (!newScrapedData || newScrapedData.length === 0) {
-        console.log(`No new positions found for URL: ${Url}`);
-        continue;
-      }
-
-      if (prevPositionsDataForUrl.length === 0) {
-        console.log(`First-time positions detected for URL: ${Url}`);
+      if (!previousPositionsData[Url]) {
+        // First run: Initialize positions data
         previousPositionsData[Url] = newScrapedData;
-
-        const message = craftMessageForTelegram({
-          url: Url,
-          ownerName: OwnerName,
-          description: Description,
-          ourRating: OurRating,
-          positionsData: newScrapedData,
-          statusMessage: "First-time positions detected",
-        });
-
-        if (!IS_DEV_ENV) {
-          await sendTelegramMessage(message);
-        }
-        console.log(`Positions data sent for URL: ${Url}`);
+        console.log(`First run: Initialized positions for URL: ${Url}`);
         continue;
       }
 
+      const prevPositionsDataForUrl = previousPositionsData[Url] || [];
+
+      // Compare previous and new data
       const posChanged = positionsChanged(
         prevPositionsDataForUrl,
         newScrapedData
@@ -220,104 +150,11 @@ async function monitor(_browser, page) {
 }
 
 /**
- * Initializes the Puppeteer browser and page.
- */
-async function initializeBrowser() {
-  let browser;
-  let page;
-  const args = [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-gpu",
-    "--disable-dev-shm-usage",
-    "--disable-extensions",
-    "--disable-accelerated-2d-canvas",
-    "--no-zygote",
-    "--single-process",
-    "--disable-background-networking",
-    "--disable-background-timer-throttling",
-    "--disable-backgrounding-occluded-windows",
-    "--disable-breakpad",
-    "--disable-component-extensions-with-background-pages",
-    "--disable-features=TranslateUI",
-    "--disable-ipc-flooding-protection",
-    "--disable-renderer-backgrounding",
-    "--force-color-profile=srgb",
-  ];
-
-  try {
-    if (!browser) {
-      initializingBrowser = true;
-      browser = await puppeteer.launch({
-        headless: true,
-        args,
-      });
-
-      page = await browser.newPage();
-
-      await page.setDefaultNavigationTimeout(OTHER_TIME_OUTS);
-
-      await page.setRequestInterception(true);
-
-      page.on("request", (request) => {
-        const resourceType = request.resourceType();
-
-        // Simple hook to remove any images or fonts
-        if (resourceType === "image" || resourceType === "font") {
-          request.abort();
-        } else {
-          request.continue();
-        }
-      });
-    }
-  } catch (error) {
-    try {
-      if (!browser) {
-        initializingBrowser = true;
-        browser = await puppeteer.launch({
-          executablePath: "/usr/bin/chromium-browser",
-          headless: true,
-          args,
-        });
-        page = await browser.newPage();
-        await page.setDefaultNavigationTimeout(OTHER_TIME_OUTS);
-
-        await page.setRequestInterception(true);
-
-        page.on("request", (request) => {
-          const resourceType = request.resourceType();
-
-          // Simple hook to remove any images or fonts
-          if (resourceType === "image" || resourceType === "font") {
-            request.abort();
-          } else {
-            request.continue();
-          }
-        });
-      }
-    } catch (error) {
-      console.error("Failed to launch browser:", error);
-    } finally {
-      initializingBrowser = false;
-    }
-  } finally {
-    initializingBrowser = false;
-  }
-
-  console.log("Browser launched.");
-
-  return {
-    browser,
-    page,
-  };
-}
-
-/**
  * Handles graceful shutdown of the bot.
  */
 function onExit() {
   console.log("Bot is shutting down...");
-  // No need to write data to file since we're keeping state in memory
+  // Optionally, perform cleanup tasks here
   process.exit();
 }
 
@@ -329,25 +166,35 @@ process.on("SIGTERM", onExit);
  * Initializes and starts the monitoring process.
  */
 function init() {
+  // Run the monitor immediately on start
+  monitor();
+
+  // Schedule the monitor function based on CRONE_SCHEDULE (e.g., every 5 minutes)
   cron.schedule(CRONE_SCHEDULE, async () => {
     console.log("Scheduled monitor run...");
-    const { browser, page } = await initializeBrowser();
-    await monitor(browser, page);
-    await page.close();
-    await browser.close();
+    await monitor();
 
+    // Invoke Garbage Collector
     if (global.gc) {
       global.gc();
       console.log("Garbage collector invoked.");
-      console.log(
-        "Current previousPositionsData:",
-        previousPositionsData?.test
-      );
+      console.log("Current previousPositionsData:", previousPositionsData);
     } else {
       console.warn(
         "Garbage collector is not exposed. Start Node.js with --expose-gc."
       );
     }
+  });
+
+  // Optional: Periodically log memory usage for monitoring
+  cron.schedule("*/2 * * * *", () => {
+    const memoryUsage = process.memoryUsage();
+    console.log("Memory Usage:", {
+      rss: `${(memoryUsage.rss / 1024 / 1024).toFixed(2)} MB`,
+      heapTotal: `${(memoryUsage.heapTotal / 1024 / 1024).toFixed(2)} MB`,
+      heapUsed: `${(memoryUsage.heapUsed / 1024 / 1024).toFixed(2)} MB`,
+      external: `${(memoryUsage.external / 1024 / 1024).toFixed(2)} MB`,
+    });
   });
 }
 
