@@ -225,30 +225,32 @@ async function monitor() {
  * Initializes the Puppeteer browser and page.
  */
 async function initializeBrowser() {
+  const args = [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-gpu",
+    "--disable-dev-shm-usage",
+    "--disable-extensions",
+    "--disable-accelerated-2d-canvas",
+    "--no-zygote",
+    "--single-process",
+    "--disable-background-networking",
+    "--disable-background-timer-throttling",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-breakpad",
+    "--disable-component-extensions-with-background-pages",
+    "--disable-features=TranslateUI",
+    "--disable-ipc-flooding-protection",
+    "--disable-renderer-backgrounding",
+    "--force-color-profile=srgb",
+  ];
+
   try {
     if (!browser) {
       initializingBrowser = true;
       browser = await puppeteer.launch({
         headless: true,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-gpu",
-          "--disable-dev-shm-usage",
-          "--disable-extensions",
-          "--disable-accelerated-2d-canvas",
-          "--no-zygote",
-          "--single-process",
-          "--disable-background-networking",
-          "--disable-background-timer-throttling",
-          "--disable-backgrounding-occluded-windows",
-          "--disable-breakpad",
-          "--disable-component-extensions-with-background-pages",
-          "--disable-features=TranslateUI",
-          "--disable-ipc-flooding-protection",
-          "--disable-renderer-backgrounding",
-          "--force-color-profile=srgb",
-        ],
+        args,
       });
       console.log("Browser launched.");
 
@@ -256,7 +258,24 @@ async function initializeBrowser() {
       console.log("Page created.");
     }
   } catch (error) {
-    console.error("Failed to launch browser:", error);
+    try {
+      if (!browser) {
+        initializingBrowser = true;
+        browser = await puppeteer.launch({
+          executablePath: "/usr/bin/chromium-browser",
+          headless: true,
+          args,
+        });
+        console.log("Browser launched.");
+
+        page = await browser.newPage();
+        console.log("Page created.");
+      }
+    } catch (error) {
+      console.error("Failed to launch browser:", error);
+    } finally {
+      initializingBrowser = false;
+    }
   } finally {
     initializingBrowser = false;
   }
