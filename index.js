@@ -309,6 +309,16 @@ async function init() {
     await monitor(browser, page);
     await page.close();
     await browser.close();
+
+    if (global.gc) {
+      global.gc();
+      console.log("Garbage collector invoked.");
+      console.log("Current previousPositionsData:", previousPositionsData);
+    } else {
+      console.warn(
+        "Garbage collector is not exposed. Start Node.js with --expose-gc."
+      );
+    }
   });
 }
 
