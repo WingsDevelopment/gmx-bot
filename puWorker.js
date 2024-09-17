@@ -78,8 +78,6 @@ async function scrapeTable(url, selectorToGet, timeout, browser) {
       });
     }, selectorToGet);
 
-    await browser.close();
-
     // Output the result as JSON string to STDOUT
     console.log(JSON.stringify({ extractedData: scrapedData }));
   } catch (error) {
@@ -126,6 +124,8 @@ async function scrapeTable(url, selectorToGet, timeout, browser) {
     });
 
     await scrapeTable(url, selectorToGet, timeout, browser);
+
+    await browser.close();
   } catch (error) {
     // Output the error message as JSON string to STDERR
     console.error(JSON.stringify({ error: error.message }));
