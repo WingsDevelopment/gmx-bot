@@ -6,6 +6,17 @@ async function scrapeTable(url, page) {
     // Handle navigation timeout
     await page.setDefaultNavigationTimeout(OTHER_TIME_OUTS);
 
+    page.on("request", (request) => {
+      const resourceType = request.resourceType();
+
+      // Simple hook to remove any images or fonts
+      if (resourceType === "image" || resourceType === "font") {
+        request.abort();
+      } else {
+        request.continue();
+      }
+    });
+
     await page.goto(url, {
       waitUntil: "networkidle2",
       timeout: OTHER_TIME_OUTS,
