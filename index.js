@@ -13,7 +13,7 @@ console.log("Starting the bot...");
 
 // Initialize previousPositionsData in memory
 let previousPositionsData = {};
-let runCounter = 0;
+let runCounter = 1;
 
 /**
  * Determines if there are changes between previous and current positions.
@@ -330,27 +330,29 @@ process.on("SIGTERM", onExit);
 /**
  * Initializes and starts the monitoring process.
  */
-function init() {
-  cron.schedule(CRONE_SCHEDULE, async () => {
+async function init() {
+  const { browser, page } = await initializeBrowser();
+
+  cronJob = cron.schedule(CRONE_SCHEDULE, async () => {
     console.log("Scheduled monitor run...");
     runCounter++;
 
-    if (runCounter > 2) {
-      powerOff.reboot((err, stderr, stdout) => {
-        if (err) {
-          console.error(`Error: ${err}`);
-        } else {
-          console.log("System is rebooting...");
-        }
-      });
-    }
-    const { browser, page } = await initializeBrowser();
-    try {
-      await monitor(browser, page);
-    } finally {
+    if (runCounter > 23) {
+      console.log(
+        "Run limit reached, stopping cron job and closing browser..."
+      );
+
+      // Stop the cron job
+      cronJob.stop();
+
+      // Close the browser and page
       await page.close();
       await browser.close();
+
+      console.log("Cron job stopped, browser closed.");
+      return; // Exit the cron job gracefully
     }
+    await monitor(browser, page);
 
     if (global.gc) {
       global.gc();
