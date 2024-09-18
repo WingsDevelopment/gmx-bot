@@ -348,6 +348,8 @@ async function init() {
       await page.close();
       await browser.close();
 
+      runCounter = 1;
+
       console.log("Cron job stopped, browser closed.");
       return; // Exit the cron job gracefully
     }
