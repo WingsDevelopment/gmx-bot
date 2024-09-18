@@ -12,7 +12,8 @@
   "dependencies": {
     "node-cron": "^3.0.3",
     "node-telegram-bot-api": "^0.66.0",
-    "puppeteer": "23.3.0"
+    "puppeteer": "23.3.0",
+    "puppeteer-cluster": "^0.24.0"
   },
   "engines": {
     "node": "18.20.4"
