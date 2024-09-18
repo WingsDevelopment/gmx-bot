@@ -12,7 +12,6 @@
   "dependencies": {
     "node-cron": "^3.0.3",
     "node-telegram-bot-api": "^0.66.0",
-    "power-off": "^1.1.2",
     "puppeteer": "23.3.0"
   },
   "engines": {

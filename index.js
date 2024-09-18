@@ -3,7 +3,6 @@ const scrapeTable = require("./scrape");
 const sendTelegramMessage = require("./notify");
 const cron = require("node-cron");
 const { CRONE_SCHEDULE, MONITOR_URLS, IS_DEV_ENV } = require("./config");
-const powerOff = require("power-off");
 
 let isScraping = false;
 let initializingBrowser = false;
