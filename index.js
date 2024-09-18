@@ -3,7 +3,12 @@ const cron = require("node-cron");
 const positionsChanged = require("./positionsChanged");
 const craftMessageForTelegram = require("./craftMessageForTelegram");
 const sendTelegramMessage = require("./notify");
-const { CRONE_SCHEDULE, MONITOR_URLS, IS_DEV_ENV } = require("./config");
+const {
+  CRONE_SCHEDULE,
+  MONITOR_URLS,
+  IS_DEV_ENV,
+  OTHER_TIME_OUTS,
+} = require("./config");
 const { Cluster } = require("puppeteer-cluster");
 // index.js
 
@@ -11,6 +16,7 @@ let isScraping = false;
 
 // Initialize previousPositionsData in memory
 let previousPositionsData = {};
+let isFirstRun = 0;
 
 /**
  * Handles graceful shutdown of the bot.
@@ -66,12 +72,12 @@ async function initCluster() {
       // Perform the scraping
       await page.goto(Url, {
         waitUntil: "networkidle2",
-        timeout: urlObj.timeout || 30000,
+        timeout: urlObj.timeout || OTHER_TIME_OUTS,
       });
 
       // Wait for the selector to be available
       await page.waitForSelector('tr[data-qa^="position-item-"]', {
-        timeout: urlObj.timeout || 30000,
+        timeout: urlObj.timeout || OTHER_TIME_OUTS,
       });
 
       // Extract positions data
@@ -108,6 +114,13 @@ async function initCluster() {
           return position;
         });
       });
+
+      if (isFirstRun <= MONITOR_URLS.length - 1) {
+        previousPositionsData[Url] = newScrapedData || [];
+        console.log(`First run: Initialized positions for URL: ${Url}`);
+        isFirstRun++;
+        return;
+      }
 
       const prevPositionsDataForUrl = previousPositionsData[Url] || [];
 
