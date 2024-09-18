@@ -1,125 +1,146 @@
-// index.js
-const cron = require("node-cron");
-const positionsChanged = require("./positionsChanged");
-const craftMessageForTelegram = require("./craftMessageForTelegram");
+const puppeteer = require("puppeteer");
+const scrapeTable = require("./scrape");
 const sendTelegramMessage = require("./notify");
-const {
-  CRONE_SCHEDULE,
-  MONITOR_URLS,
-  IS_DEV_ENV,
-  OTHER_TIME_OUTS,
-} = require("./config");
-const { Cluster } = require("puppeteer-cluster");
-// index.js
+const cron = require("node-cron");
+const { CRONE_SCHEDULE, MONITOR_URLS, IS_DEV_ENV } = require("./config");
+const powerOff = require("power-off");
 
 let isScraping = false;
+let initializingBrowser = false;
+let isFirstRun = 0; // Changed to boolean for clarity
+
+console.log("Starting the bot...");
 
 // Initialize previousPositionsData in memory
 let previousPositionsData = {};
-let isFirstRun = 0;
+let runCounter = 0;
 
 /**
- * Handles graceful shutdown of the bot.
+ * Determines if there are changes between previous and current positions.
+ * @param {Array} prevPositions - The previous positions data.
+ * @param {Array} currentPositions - The current scraped positions data.
+ * @returns {Object} - An object indicating if there's a change and the corresponding message.
  */
-function onExit() {
-  console.log("Bot is shutting down...");
-  process.exit();
+function positionsChanged(prevPositions, currentPositions) {
+  const prevEntries = prevPositions.map((pos) =>
+    parseFloat(pos.entryPrice.replace(/[$,]/g, "")).toFixed(2)
+  );
+  const currentEntries = currentPositions.map((pos) =>
+    parseFloat(pos.entryPrice.replace(/[$,]/g, "")).toFixed(2)
+  );
+
+  const prevEntrySet = new Set(prevEntries);
+  const currentEntrySet = new Set(currentEntries);
+  const allEntries = new Set([...prevEntrySet, ...currentEntrySet]);
+
+  for (const entryPrice of allEntries) {
+    const inPrev = prevEntrySet.has(entryPrice);
+    const inCurrent = currentEntrySet.has(entryPrice);
+
+    if (!inPrev && inCurrent) {
+      // New position added
+      console.log(`New position added with entryPrice: ${entryPrice}`);
+      const newPosition = currentPositions.find(
+        (pos) =>
+          parseFloat(pos.entryPrice.replace(/[$,]/g, "")).toFixed(2) ===
+          entryPrice
+      );
+      return {
+        changed: true,
+        message: `*New position added*: ${newPosition.token} at entry price ${entryPrice}`,
+      };
+    } else if (inPrev && !inCurrent) {
+      // Position closed
+      console.log(`Position closed with entryPrice: ${entryPrice}`);
+      const closedPosition = prevPositions.find(
+        (pos) =>
+          parseFloat(pos.entryPrice.replace(/[$,]/g, "")).toFixed(2) ===
+          entryPrice
+      );
+      return {
+        changed: true,
+        message: `*Position closed*: ${closedPosition.token} at entry price ${entryPrice}`,
+      };
+    }
+  }
+
+  // No changes detected in entry prices
+  return { changed: false, message: "" };
 }
 
-// Listen for termination signals
-process.on("SIGINT", onExit);
-process.on("SIGTERM", onExit);
-
 /**
- * Initializes and starts the Puppeteer Cluster.
+ * Crafts a message for Telegram based on the provided data.
+ * @param {Object} params - The parameters for crafting the message.
+ * @returns {string} - The formatted Telegram message.
  */
-async function initCluster() {
-  const cluster = await Cluster.launch({
-    concurrency: Cluster.CONCURRENCY_PAGE,
-    maxConcurrency: 5, // Adjust based on system capacity
-    puppeteerOptions: {
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-gpu",
-        "--disable-dev-shm-usage",
-        "--disable-extensions",
-        "--disable-accelerated-2d-canvas",
-        "--no-zygote",
-        "--single-process",
-        "--disable-background-networking",
-        "--disable-background-timer-throttling",
-        "--disable-backgrounding-occluded-windows",
-        "--disable-breakpad",
-        "--disable-component-extensions-with-background-pages",
-        "--disable-features=TranslateUI",
-        "--disable-ipc-flooding-protection",
-        "--disable-renderer-backgrounding",
-        "--force-color-profile=srgb",
-      ],
-    },
-    timeout: 120 * 1000, // 2 minutes per task
-    retryLimit: 2, // Number of retries per task
-    retryDelay: 2000, // Delay between retries in ms
+function craftMessageForTelegram({
+  url,
+  ownerName,
+  description,
+  ourRating,
+  positionsData = [],
+  statusMessage = "",
+}) {
+  let message = `*Owner*: ${ownerName}\n*Description*: ${description}\n*Our Rating*: ${ourRating}\n\n`;
+  message += statusMessage ? `*Status*: ${statusMessage}\n\n` : "";
+  message += `*Positions Data for URL:*\n${url}\n\n`;
+
+  positionsData.forEach((position, index) => {
+    message += `*Position ${index + 1}:* ${position.token}\n`;
+    message += `- *Collateral:* ${position.collateral}\n`;
+    message += `- *Entry Price:* ${position.entryPrice}\n`;
+    message += `- *Liquidation Price:* ${position.liquidationPrice}\n`;
+    message += "\n";
   });
 
-  // Define the task function
-  await cluster.task(async ({ page, data: urlObj }) => {
-    const { Url, Description, OurRating, OwnerName } = urlObj;
+  return message;
+}
 
+/**
+ * Retries scraping the table data with specified attempts.
+ * @param {string} url - The URL to scrape.
+ * @param {Object} page - The Puppeteer page instance.
+ * @param {number} retries - Number of retry attempts.
+ * @returns {Array|null} - The scraped data or null if all attempts fail.
+ */
+async function retryScrapeTable(url, page, retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      // Perform the scraping
-      await page.goto(Url, {
-        waitUntil: "networkidle2",
-        timeout: urlObj.timeout || OTHER_TIME_OUTS,
-      });
+      const scrapedData = await scrapeTable(url, page);
+      if (scrapedData) {
+        return scrapedData; // If successful, return the scraped data
+      }
+      console.log(`Attempt ${attempt} failed for URL: ${url}, retrying...`);
+    } catch (error) {
+      console.error(
+        `Attempt ${attempt} resulted in an error for URL: ${url}`,
+        error
+      );
+    }
+    if (attempt === retries) {
+      console.error(`All ${retries} attempts failed for URL: ${url}`);
+      return null; // If all attempts fail, return null
+    }
+  }
+  return null;
+}
 
-      // Wait for the selector to be available
-      await page.waitForSelector('tr[data-qa^="position-item-"]', {
-        timeout: urlObj.timeout || OTHER_TIME_OUTS,
-      });
+/**
+ * Monitors the specified URLs for changes in positions data.
+ */
+async function monitor(_browser, page) {
+  if (isScraping || initializingBrowser) return;
+  isScraping = true;
 
-      // Extract positions data
-      const newScrapedData = await page.evaluate(() => {
-        const rows = Array.from(
-          document.querySelectorAll('tr[data-qa^="position-item-"]')
-        );
-        return rows.map((row) => {
-          const position = {};
-
-          // Token and Leverage
-          const tokenCell = row.querySelector('td[data-qa="position-handle"]');
-          if (tokenCell) {
-            const tokenName =
-              tokenCell
-                .querySelector(".Exchange-list-title")
-                ?.innerText.trim() || "";
-            const leverageText =
-              tokenCell
-                .querySelector(".Exchange-list-info-label")
-                ?.innerText.trim() || "";
-            position.token = `${tokenName} ${leverageText}`;
-          }
-
-          // Other columns
-          const cols = Array.from(row.querySelectorAll("td"));
-          position.size = cols[1]?.innerText.trim() || "";
-          position.netValue = cols[2]?.innerText.trim() || "";
-          position.collateral = cols[3]?.innerText.trim() || "";
-          position.entryPrice = cols[4]?.innerText.trim() || "";
-          position.markPrice = cols[5]?.innerText.trim() || "";
-          position.liquidationPrice = cols[6]?.innerText.trim() || "";
-
-          return position;
-        });
-      });
+  for (const { Url, Description, OurRating, OwnerName } of MONITOR_URLS) {
+    try {
+      const newScrapedData = await retryScrapeTable(Url, page);
 
       if (isFirstRun <= MONITOR_URLS.length - 1) {
         previousPositionsData[Url] = newScrapedData || [];
         console.log(`First run: Initialized positions for URL: ${Url}`);
         isFirstRun++;
-        return;
+        continue;
       }
 
       const prevPositionsDataForUrl = previousPositionsData[Url] || [];
@@ -141,12 +162,12 @@ async function initCluster() {
           await sendTelegramMessage(message);
         }
         console.log(`All positions closed for URL: ${Url}`);
-        return;
+        continue;
       }
 
       if (!newScrapedData || newScrapedData.length === 0) {
         console.log(`No new positions found for URL: ${Url}`);
-        return;
+        continue;
       }
 
       if (prevPositionsDataForUrl.length === 0) {
@@ -166,7 +187,7 @@ async function initCluster() {
           await sendTelegramMessage(message);
         }
         console.log(`Positions data sent for URL: ${Url}`);
-        return;
+        continue;
       }
 
       const posChanged = positionsChanged(
@@ -193,79 +214,156 @@ async function initCluster() {
         console.log(`No significant changes detected for URL: ${Url}`);
       }
     } catch (error) {
-      console.error(`Error scraping URL: ${Url}\n`, error.message);
-      throw error; // Let Puppeteer Cluster handle retries
+      console.error(`Error processing URL: ${Url}\n`, error);
     }
-  });
-
-  return cluster;
-}
-
-/**
- * Monitors the specified URLs for changes in positions data.
- */
-async function monitor(cluster) {
-  if (isScraping) {
-    console.log("Previous scraping still in progress. Skipping this run.");
-    return;
-  }
-  isScraping = true;
-
-  for (const urlObj of MONITOR_URLS) {
-    cluster.queue(urlObj);
   }
 
-  await cluster.idle();
   isScraping = false;
 }
 
 /**
+ * Initializes the Puppeteer browser and page.
+ */
+async function initializeBrowser() {
+  let browser;
+  let page;
+  const args = [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-gpu",
+    "--disable-dev-shm-usage",
+    "--disable-extensions",
+    "--disable-accelerated-2d-canvas",
+    "--no-zygote",
+    "--single-process",
+    "--disable-background-networking",
+    "--disable-background-timer-throttling",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-breakpad",
+    "--disable-component-extensions-with-background-pages",
+    "--disable-features=TranslateUI",
+    "--disable-ipc-flooding-protection",
+    "--disable-renderer-backgrounding",
+    "--force-color-profile=srgb",
+  ];
+
+  try {
+    if (!browser) {
+      initializingBrowser = true;
+      browser = await puppeteer.launch({
+        headless: true,
+        args,
+      });
+
+      page = await browser.newPage();
+
+      await page.setDefaultNavigationTimeout(OTHER_TIME_OUTS);
+
+      await page.setRequestInterception(true);
+
+      page.on("request", (request) => {
+        const resourceType = request.resourceType();
+
+        // Simple hook to remove any images or fonts
+        if (resourceType === "image" || resourceType === "font") {
+          request.abort();
+        } else {
+          request.continue();
+        }
+      });
+    }
+  } catch (error) {
+    try {
+      if (!browser) {
+        initializingBrowser = true;
+        browser = await puppeteer.launch({
+          executablePath: "/usr/bin/chromium-browser",
+          headless: true,
+          args,
+        });
+        page = await browser.newPage();
+        await page.setDefaultNavigationTimeout(OTHER_TIME_OUTS);
+
+        await page.setRequestInterception(true);
+
+        page.on("request", (request) => {
+          const resourceType = request.resourceType();
+
+          // Simple hook to remove any images or fonts
+          if (resourceType === "image" || resourceType === "font") {
+            request.abort();
+          } else {
+            request.continue();
+          }
+        });
+      }
+    } catch (error) {
+      console.error("Failed to launch browser:", error);
+    } finally {
+      initializingBrowser = false;
+    }
+  } finally {
+    initializingBrowser = false;
+  }
+
+  console.log("Browser launched.");
+
+  return {
+    browser,
+    page,
+  };
+}
+
+/**
+ * Handles graceful shutdown of the bot.
+ */
+function onExit() {
+  console.log("Bot is shutting down...");
+  // No need to write data to file since we're keeping state in memory
+  process.exit();
+}
+
+// Listen for termination signals
+process.on("SIGINT", onExit);
+process.on("SIGTERM", onExit);
+
+/**
  * Initializes and starts the monitoring process.
  */
-async function init() {
-  const cluster = await initCluster();
-
-  // Schedule the monitor function based on CRONE_SCHEDULE (e.g., every 5 minutes)
+function init() {
   cron.schedule(CRONE_SCHEDULE, async () => {
     console.log("Scheduled monitor run...");
-    await monitor(cluster);
+    runCounter++;
 
-    // Invoke Garbage Collector
+    if (runCounter > 2) {
+      powerOff.reboot((err, stderr, stdout) => {
+        if (err) {
+          console.error(`Error: ${err}`);
+        } else {
+          console.log("System is rebooting...");
+        }
+      });
+    }
+    const { browser, page } = await initializeBrowser();
+    try {
+      await monitor(browser, page);
+    } finally {
+      await page.close();
+      await browser.close();
+    }
+
     if (global.gc) {
       global.gc();
       console.log("Garbage collector invoked.");
-      console.log("Current previousPositionsData:", previousPositionsData);
+      console.log(
+        "Current previousPositionsData:",
+        previousPositionsData?.test
+      );
     } else {
       console.warn(
         "Garbage collector is not exposed. Start Node.js with --expose-gc."
       );
     }
-  });
-
-  // Optional: Periodically log memory usage for monitoring
-  cron.schedule("*/2 * * * *", () => {
-    const memoryUsage = process.memoryUsage();
-    console.log("Memory Usage:", {
-      rss: `${(memoryUsage.rss / 1024 / 1024).toFixed(2)} MB`,
-      heapTotal: `${(memoryUsage.heapTotal / 1024 / 1024).toFixed(2)} MB`,
-      heapUsed: `${(memoryUsage.heapUsed / 1024 / 1024).toFixed(2)} MB`,
-      external: `${(memoryUsage.external / 1024 / 1024).toFixed(2)} MB`,
-    });
-  });
-
-  // Handle graceful shutdown
-  process.on("SIGINT", async () => {
-    console.log("Received SIGINT. Shutting down gracefully...");
-    await cluster.idle();
-    await cluster.close();
-    process.exit();
-  });
-
-  process.on("SIGTERM", async () => {
-    console.log("Received SIGTERM. Shutting down gracefully...");
-    await cluster.idle();
-    await cluster.close();
-    process.exit();
   });
 }
 
